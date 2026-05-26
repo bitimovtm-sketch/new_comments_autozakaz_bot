@@ -65,10 +65,10 @@ def main():
     sent = 0
 
     for task in tasks:
-        task_id = str(task["ID"])
+        task_id = str(task.get("ID") or task.get("id"))
         comments = get_comments(int(task_id))
-        log.info("Задача %s (%s): комментариев %d", task_id, task.get("TITLE","")[:30], len(comments))
-
+        log.info("Задача %s (%s): комментариев %d", task_id, (task.get("TITLE") or task.get("title",""))[:30], len(comments))
+        
         last_id = int(state.get(task_id, 0))
         max_id = last_id
 
@@ -86,7 +86,7 @@ def main():
             msg = c.get("POST_MESSAGE", "").strip()[:800]
             date = c.get("POST_DATE", "")
 
-            text = f"💬 <b>Новый комментарий</b>\n\n📋 <b>{task['TITLE']}</b>\n👤 {name}  🕐 {date}\n\n{msg}"
+            text = f"💬 <b>Новый комментарий</b>\n\n📋 <b>{task.get('TITLE') or task.get('title','')}</b>\n👤 {name}  🕐 {date}\n\n{msg}"
             if send_tg(text):
                 sent += 1
             time.sleep(0.3)
