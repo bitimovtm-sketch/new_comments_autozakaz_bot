@@ -3,7 +3,7 @@
 Все настройки берутся из переменных окружения (GitHub Secrets).
 """
 
-import os, json, time, logging, requests
+import json, time, logging, requests
 
 # Настройки из GitHub Secrets (заполняете один раз в интерфейсе GitHub)
 BITRIX_WEBHOOK_URL = os.environ["https://autozakaz.bitrix24.ru/rest/2968/zvtlkvgkhnf7xwuu/"]
