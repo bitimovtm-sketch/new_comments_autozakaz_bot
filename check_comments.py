@@ -6,10 +6,10 @@
 import os, json, time, logging, requests
 
 # Настройки из GitHub Secrets (заполняете один раз в интерфейсе GitHub)
-BITRIX_WEBHOOK_URL = os.environ["BITRIX_WEBHOOK_URL"]
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+BITRIX_WEBHOOK_URL = os.environ["https://autozakaz.bitrix24.ru/rest/2968/zvtlkvgkhnf7xwuu/"]
+TELEGRAM_BOT_TOKEN = os.environ["8965670792:AAEvQS2flMY32a9q5BTkTMgzE4QEntW_zCM"]
 TELEGRAM_CHAT_ID   = os.environ["TELEGRAM_CHAT_ID"]
-PROJECT_ID         = int(os.environ["PROJECT_ID"])
+PROJECT_ID         = int(os.environ["52"])
 
 STATE_FILE = "last_check_state.json"
 
