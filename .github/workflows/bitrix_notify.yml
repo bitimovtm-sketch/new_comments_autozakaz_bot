@@ -2,9 +2,11 @@ name: Битрикс24 → Telegram уведомления
 
 on:
   schedule:
-    # Запускается каждые 10 минут (минимальный интервал GitHub Actions)
     - cron: '*/10 * * * *'
-  workflow_dispatch:  # Позволяет запустить вручную из интерфейса GitHub
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   check-comments:
@@ -22,12 +24,11 @@ jobs:
       - name: Установить зависимости
         run: pip install requests
 
-      - name: Восстановить состояние (последние просмотренные комментарии)
-        uses: actions/cache@v4
-        with:
-          path: last_check_state.json
-          key: bitrix-state-v1
-          restore-keys: bitrix-state-v1
+      - name: Загрузить состояние из ветки
+        run: |
+          git fetch origin state 2>/dev/null && \
+          git show origin/state:last_check_state.json > last_check_state.json 2>/dev/null || \
+          echo "Первый запуск — файл состояния будет создан"
 
       - name: Запустить проверку комментариев
         env:
@@ -37,9 +38,17 @@ jobs:
           PROJECT_ID: ${{ secrets.PROJECT_ID }}
         run: python check_comments.py
 
-      - name: Сохранить состояние
-        uses: actions/cache/save@v4
-        if: always()
-        with:
-          path: last_check_state.json
-          key: bitrix-state-v1-${{ github.run_id }}
+      - name: Сохранить состояние в ветку
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin state 2>/dev/null || git checkout --orphan state
+          git checkout origin/state 2>/dev/null || true
+          git checkout --orphan state 2>/dev/null || git checkout state 2>/dev/null || true
+          cp last_check_state.json /tmp/last_check_state.json
+          git checkout --orphan state-new
+          git rm -rf . --quiet 2>/dev/null || true
+          cp /tmp/last_check_state.json last_check_state.json
+          git add last_check_state.json
+          git commit -m "Обновление состояния [skip ci]"
+          git push origin HEAD:state --force
