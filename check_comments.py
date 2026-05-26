@@ -51,7 +51,7 @@ def get_tasks():
     tasks, start = [], 0
     while True:
         result = bitrix("tasks.task.list", {
-            "filter": {"GROUP_ID": PROJECT_ID, "STATUS": 3},
+            "filter": {"GROUP_ID": PROJECT_ID},
             "select": ["ID", "TITLE"],
             "start": start
         })
