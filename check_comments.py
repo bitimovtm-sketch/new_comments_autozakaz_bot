@@ -51,24 +51,10 @@ def is_system_message(msg):
     author_id = str(msg.get("author_id", "0"))
     text = msg.get("text", "").strip()
 
-    # Системные сообщения от бота (author_id = 0)
+    # Только явно системные — от бота
     if author_id == "0":
         return True
-    # Пустые
     if not text:
-        return True
-    # Системные теги Битрикс24
-    if "[USER=" in text and "] изменил" in text:
-        return True
-    if "[USER=" in text and "] завершил" in text:
-        return True
-    if "[USER=" in text and "] вернул" in text:
-        return True
-    if "[USER=" in text and "] назначил" in text:
-        return True
-    if "[TIMESTAMP=" in text:
-        return True
-    if text.startswith("NOTIFY"):
         return True
     return False
 
