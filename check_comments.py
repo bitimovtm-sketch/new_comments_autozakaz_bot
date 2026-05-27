@@ -1,6 +1,6 @@
 import json, time, logging, requests
 
-BITRIX = "https://autozakaz.bitrix24.ru/rest/2968/zvtlkvgkhnf7xwuu"
+BITRIX = "https://autozakaz.bitrix24.ru/rest/2968/epstb1ztccf45l0n"
 TELEGRAM_TOKEN = "8965670792:AAEvQS2flMY32a9q5BTkTMgzE4QEntW_zCM"
 CHAT_ID = "625135175"
 PROJECT_ID = 52
@@ -10,36 +10,83 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger(__name__)
 
 def get_tasks():
-    url = f"{BITRIX}/tasks.task.list.json"
-    r = requests.post(url, json={"filter": {"GROUP_ID": PROJECT_ID}, "select": ["ID","TITLE"]}, timeout=15)
-    log.info("tasks response status: %s", r.status_code)
-    log.info("tasks response: %s", r.text[:300])
-    data = r.json()
-    return data.get("result", {}).get("tasks", [])
+    tasks = []
+    start = 0
+    while True:
+        r = requests.post(f"{BITRIX}/tasks.task.list.json", json={
+            "filter": {"GROUP_ID": PROJECT_ID},
+            "select": ["ID", "TITLE", "CHAT_ID"],
+            "start": start
+        }, timeout=15)
+        batch = r.json().get("result", {}).get("tasks", [])
+        tasks.extend(batch)
+        if len(batch) < 50:
+            break
+        start += 50
+    log.info("Найдено задач: %d", len(tasks))
+    return tasks
 
-def get_comments(task_id):
-    url = f"{BITRIX}/task.commentitem.getlist.json"
-    r = requests.post(url, json={"TASKID": task_id, "ORDER": {"ID": "ASC"}}, timeout=15)
-    data = r.json()
-    result = data.get("result", [])
-    return result if isinstance(result, list) else []
+def get_chat_id_for_task(task_id):
+    """Получить ID чата задачи"""
+    r = requests.post(f"{BITRIX}/tasks.task.get.json", json={
+        "taskId": task_id,
+        "select": ["ID", "TITLE", "FORUM_TOPIC_ID", "CHAT_ID"]
+    }, timeout=15)
+    data = r.json().get("result", {}).get("task", {})
+    chat_id = data.get("chatId") or data.get("CHAT_ID")
+    return chat_id
 
-def is_system(comment):
-    author_id = str(comment.get("AUTHOR_ID", "0"))
-    msg = comment.get("POST_MESSAGE", "").strip()
-    if author_id == "0" or not msg or "[HISTORY]" in msg:
+def get_chat_messages(chat_id, last_message_id=0):
+    """Получить сообщения из чата задачи"""
+    r = requests.post(f"{BITRIX}/im.dialog.messages.get.json", json={
+        "DIALOG_ID": f"chat{chat_id}",
+        "LIMIT": 20
+    }, timeout=15)
+    data = r.json()
+    messages = data.get("result", {}).get("messages", [])
+    return messages if isinstance(messages, list) else []
+
+def is_system_message(msg):
+    """Фильтр системных сообщений"""
+    author_id = str(msg.get("author_id", "0"))
+    text = msg.get("text", "").strip()
+
+    # Системные сообщения от бота (author_id = 0)
+    if author_id == "0":
         return True
-    system_words = ["изменил", "изменила", "изменили", "deadline", "status changed"]
-    msg_low = msg.lower()
-    words = [w for w in msg.split() if len(w) > 3]
-    if len(words) < 5 and len(msg) < 120 and any(p in msg_low for p in system_words):
+    # Пустые
+    if not text:
+        return True
+    # Системные теги Битрикс24
+    if "[USER=" in text and "] изменил" in text:
+        return True
+    if "[USER=" in text and "] завершил" in text:
+        return True
+    if "[USER=" in text and "] вернул" in text:
+        return True
+    if "[USER=" in text and "] назначил" in text:
+        return True
+    if "[TIMESTAMP=" in text:
+        return True
+    if text.startswith("NOTIFY"):
         return True
     return False
 
+def clean_text(text):
+    """Убрать служебные теги Битрикс из текста"""
+    import re
+    text = re.sub(r'\[USER=\d+\](.*?)\[/USER\]', r'\1', text)
+    text = re.sub(r'\[B\](.*?)\[/B\]', r'*\1*', text)
+    text = re.sub(r'\[U\](.*?)\[/U\]', r'\1', text)
+    text = re.sub(r'\[.*?\]', '', text)
+    return text.strip()
+
 def send_tg(text):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    r = requests.post(url, json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=10)
-    log.info("telegram response: %s %s", r.status_code, r.text[:200])
+    r = requests.post(
+        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+        json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"},
+        timeout=10
+    )
     return r.ok
 
 def load_state():
@@ -59,43 +106,81 @@ def main():
     log.info("Первый запуск: %s", first_run)
 
     tasks = get_tasks()
-    log.info("Найдено задач: %d", len(tasks))
-
     new_state = dict(state)
     sent = 0
 
     for task in tasks:
-        task_id = str(task.get("ID") or task.get("id"))
-        comments = get_comments(int(task_id))
-        log.info("Задача %s (%s): комментариев %d", task_id, (task.get("TITLE") or task.get("title",""))[:30], len(comments))
-        
-        last_id = int(state.get(task_id, 0))
-        max_id = last_id
+        task_id = str(task.get("id") or task.get("ID", ""))
+        task_title = task.get("title") or task.get("TITLE", "Без названия")
 
-        for c in comments:
-            cid = int(c.get("ID", 0))
-            max_id = max(max_id, cid)
-            if cid <= last_id or first_run:
+        if not task_id:
+            continue
+
+        # Получаем chat_id задачи
+        chat_id = task.get("chatId") or task.get("CHAT_ID")
+        if not chat_id:
+            chat_id = get_chat_id_for_task(task_id)
+            time.sleep(0.1)
+
+        if not chat_id:
+            log.info("Задача %s: чат не найден", task_id)
+            continue
+
+        state_key = f"task_{task_id}"
+        last_msg_id = int(state.get(state_key, 0))
+
+        messages = get_chat_messages(chat_id, last_msg_id)
+        time.sleep(0.2)
+
+        if not messages:
+            continue
+
+        max_id = last_msg_id
+        new_messages = []
+
+        for msg in messages:
+            msg_id = int(msg.get("id", 0))
+            max_id = max(max_id, msg_id)
+
+            if msg_id <= last_msg_id or first_run:
                 continue
-            if is_system(c):
-                log.info("  пропущен системный комментарий #%d", cid)
+            if is_system_message(msg):
                 continue
 
-            author = c.get("AUTHOR", {})
-            name = f"{author.get('NAME','')} {author.get('LAST_NAME','')}".strip() or "Сотрудник"
-            msg = c.get("POST_MESSAGE", "").strip()[:800]
-            date = c.get("POST_DATE", "")
+            new_messages.append(msg)
 
-            text = f"💬 <b>Новый комментарий</b>\n\n📋 <b>{task.get('TITLE') or task.get('title','')}</b>\n👤 {name}  🕐 {date}\n\n{msg}"
-            if send_tg(text):
+        new_state[state_key] = max_id
+
+        if not new_messages:
+            continue
+
+        log.info("Задача %s (%s): новых сообщений %d", task_id, task_title[:30], len(new_messages))
+
+        for msg in new_messages:
+            users = messages[0].get("users", {}) if messages else {}
+            author_id = str(msg.get("author_id", ""))
+            author_info = users.get(author_id, {})
+            first = author_info.get("first_name", "")
+            last = author_info.get("last_name", "")
+            author_name = f"{first} {last}".strip() or "Сотрудник"
+
+            text = clean_text(msg.get("text", ""))[:800]
+            date = msg.get("date", "")
+            task_url = f"https://autozakaz.bitrix24.ru/company/personal/user/0/tasks/task/view/{task_id}/"
+
+            tg_text = (
+                f"💬 <b>Новый комментарий</b>\n\n"
+                f"📋 <a href='{task_url}'>{task_title}</a>\n"
+                f"👤 {author_name}  🕐 {date}\n\n"
+                f"{text}"
+            )
+            if send_tg(tg_text):
                 sent += 1
             time.sleep(0.3)
 
-        new_state[task_id] = max_id
-
     save_state(new_state)
     if first_run:
-        log.info("Первый запуск завершён — состояние сохранено. Новые комментарии будут приходить со следующего запуска.")
+        log.info("Первый запуск завершён. Новые сообщения будут приходить со следующего запуска.")
     else:
         log.info("Готово. Отправлено: %d", sent)
 
