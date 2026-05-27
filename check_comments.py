@@ -73,6 +73,7 @@ def send_tg(text):
         json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"},
         timeout=10
     )
+    log.info("Telegram статус: %s, ответ: %s", r.status_code, r.text[:300])
     return r.ok
 
 def load_state():
