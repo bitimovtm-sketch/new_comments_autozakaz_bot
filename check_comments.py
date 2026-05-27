@@ -2,7 +2,7 @@ import json, time, logging, requests
 
 BITRIX = "https://autozakaz.bitrix24.ru/rest/2968/epstb1ztccf45l0n"
 TELEGRAM_TOKEN = "8965670792:AAEvQS2flMY32a9q5BTkTMgzE4QEntW_zCM"
-CHAT_ID = "625135177"
+CHAT_ID = "112201829"
 PROJECT_ID = 52
 STATE_FILE = "last_check_state.json"
 
