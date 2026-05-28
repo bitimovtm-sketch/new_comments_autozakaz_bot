@@ -63,7 +63,13 @@ def get_chat_messages(chat_id):
         "DIALOG_ID": f"chat{chat_id}", "LIMIT": 20}, timeout=15)
     res = r.json().get("result", {})
     msgs = res.get("messages", [])
-    return (msgs if isinstance(msgs, list) else []), res.get("users", {})
+    users_raw = res.get("users", {})
+    # users может прийти как список или как словарь
+    if isinstance(users_raw, list):
+        users = {str(u.get("id","")): u for u in users_raw if isinstance(u, dict)}
+    else:
+        users = users_raw
+    return (msgs if isinstance(msgs, list) else []), users
 
 def is_system(msg):
     author_id = str(msg.get("author_id", "0"))
