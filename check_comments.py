@@ -16,12 +16,6 @@ def check_telegram():
         log.info("✓ Telegram бот: @%s", r.json().get("result",{}).get("username","?"))
     else:
         log.error("✗ Токен неверный: %s", r.text); return False
-    r = requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-        json={"chat_id": CHAT_ID, "text": "🔧 Бот работает!"}, timeout=10)
-    if r.ok:
-        log.info("✓ Тест отправки OK (chat_id=%s)", CHAT_ID)
-    else:
-        log.error("✗ Ошибка отправки: %s", r.text); return False
     return True
 
 def check_bitrix():
@@ -75,6 +69,7 @@ def is_system(msg):
     author_id = str(msg.get("author_id", "0"))
     text = msg.get("text", "").strip()
     if author_id == "0": return True, "бот"
+    if author_id == "2968": return True, "свой аккаунт"
     if not text: return True, "пусто"
     if "[USER=" in text and any(x in text for x in ["] изменил","] завершил","] вернул","] назначил","] создал"]):
         return True, "системное действие"
